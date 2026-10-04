@@ -3013,7 +3013,7 @@ function buyCheapBuildings() {
         towers.sell(1);
         return true;
     }
-    var limit = Game.cookiesPs * FrozenCookies.cheapBuildingSeconds;
+    var limit = baseCps() * FrozenCookies.cheapBuildingSeconds;
     if (!(limit > 0)) return false;
     var delay = FrozenCookies.caches.nextChainedPurchase ? delayAmount() : 0;
     var budget = Game.cookies - delay;
@@ -3067,7 +3067,6 @@ function autoCookie() {
             }
             FrozenCookies.hc_gain += changeAmount;
         }
-        if (buyCheapBuildings()) FrozenCookies.recalculateCaches = true;
         updateCaches();
         var recommendation = nextPurchase();
         var delay = delayAmount();
@@ -3263,6 +3262,12 @@ function autoCookie() {
             }
             FrozenCookies.recalculateCaches = true;
             FrozenCookies.processing = false;
+            itemBought = true;
+        }
+
+        // Runs after the normal purchase so affordable upgrades get first claim on cookies.
+        if (buyCheapBuildings()) {
+            FrozenCookies.recalculateCaches = true;
             itemBought = true;
         }
 
