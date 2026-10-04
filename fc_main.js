@@ -300,6 +300,10 @@ function setOverrides(gameSaveData) {
         FrozenCookies.minLoanMult = preferenceParse("minLoanMult", 1);
         FrozenCookies.minASFMult = preferenceParse("minASFMult", 1);
         FrozenCookies.manBankMins = preferenceParse("manBankMins", 0);
+        FrozenCookies.cheapBuildingSeconds = preferenceParse(
+            "cheapBuildingSeconds",
+            0.5
+        );
 
         // building max values
         FrozenCookies.mineMax = preferenceParse("mineMax", 0);
@@ -492,6 +496,7 @@ function saveFCData() {
     saveString.maxSpecials = FrozenCookies.maxSpecials;
     saveString.orbMax = FrozenCookies.orbMax;
     saveString.manBankMins = FrozenCookies.manBankMins;
+    saveString.cheapBuildingSeconds = FrozenCookies.cheapBuildingSeconds;
     saveString.prevLastHCTime = FrozenCookies.prevLastHCTime;
     saveString.saveVersion = FrozenCookies.version;
     return JSON.stringify(saveString);
@@ -694,6 +699,15 @@ function updateASFMultMin(base) {
     userInputPrompt(
         "Sugar Frenzy!",
         'What CpS multiplier should trigger buying the sugar frenzy (e.g. "100" will trigger for a decent early combo, "1000" will require a huge building buff combo, etc.)?',
+        FrozenCookies[base],
+        storeNumberCallback(base, 0)
+    );
+}
+
+function updateCheapBuildingSeconds(base) {
+    userInputPrompt(
+        "Cheap Buildings!",
+        "Instantly buy buildings costing less than this many seconds of CpS (0 disables, 0.5 recommended).",
         FrozenCookies[base],
         storeNumberCallback(base, 0)
     );
@@ -2961,6 +2975,72 @@ function fcClickCookie() {
         Game.ClickCookie();
 }
 
+function buildingPurchaseCap(b) {
+    switch (b.name) {
+        case "Mine":
+            return FrozenCookies.mineLimit ? FrozenCookies.mineMax : Infinity;
+        case "Factory":
+            return FrozenCookies.factoryLimit
+                ? FrozenCookies.factoryMax
+                : Infinity;
+        case "Wizard tower":
+            return M && FrozenCookies.towerLimit && M.magicM >= FrozenCookies.manaMax
+                ? 0
+                : Infinity;
+        case "You":
+            var cap = Infinity;
+            if (M && FrozenCookies.autoCasting == 5) cap = Math.min(cap, 399);
+            if (FrozenCookies.autoDragonOrbs && FrozenCookies.orbLimit)
+                cap = Math.min(cap, FrozenCookies.orbMax);
+            return cap;
+    }
+    return Infinity;
+}
+
+// Buys cheap buildings in bulk without evaluating them; returns true if anything was bought.
+function buyCheapBuildings() {
+    if (!FrozenCookies.autoBuy || !FrozenCookies.cheapBuildings) return false;
+    var bl = blacklist[FrozenCookies.blacklist].buildings;
+    if (bl === true) return false;
+    var towers = Game.Objects["Wizard tower"];
+    // A tower adds under 1 max mana, so selling stops exactly at manaMax, where the normal buyer also stops.
+    if (
+        M &&
+        FrozenCookies.towerLimit &&
+        towers.amount > 0 &&
+        M.magicM > FrozenCookies.manaMax
+    ) {
+        towers.sell(1);
+        return true;
+    }
+    var limit = Game.cookiesPs * FrozenCookies.cheapBuildingSeconds;
+    if (!(limit > 0)) return false;
+    var delay = FrozenCookies.caches.nextChainedPurchase ? delayAmount() : 0;
+    var budget = Game.cookies - delay;
+    var bought = false;
+    Game.ObjectsById.forEach(function (b) {
+        if (bl.includes(b.id)) return;
+        var cap = buildingPurchaseCap(b);
+        var unit = b.getPrice();
+        var count = 0;
+        while (
+            unit <= limit &&
+            unit <= budget &&
+            b.amount + count < cap &&
+            count < 5000
+        ) {
+            budget -= unit;
+            unit *= Game.priceIncrease;
+            count++;
+        }
+        if (count > 0) {
+            safeBuy(b, count);
+            bought = true;
+        }
+    });
+    return bought;
+}
+
 function autoCookie() {
     //console.log('autocookie called');
     if (!FrozenCookies.processing && !Game.OnAscend && !Game.AscendTimer) {
@@ -2987,6 +3067,7 @@ function autoCookie() {
             }
             FrozenCookies.hc_gain += changeAmount;
         }
+        if (buyCheapBuildings()) FrozenCookies.recalculateCaches = true;
         updateCaches();
         var recommendation = nextPurchase();
         var delay = delayAmount();

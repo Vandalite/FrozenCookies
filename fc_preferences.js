@@ -73,6 +73,12 @@ FrozenCookies.preferenceValues = {
         default: 0,
         extras: '<a class="option" id="factoryMax" onclick="updateFactoryMax(\'factoryMax\');">${factoryMax} Factories</a>',
     },
+    cheapBuildings: {
+        hint: "Instantly bulk-buy buildings costing less than this many seconds of CpS (skips efficiency math).",
+        display: ["Cheap Building Buy OFF", "Cheap Building Buy ON"],
+        default: 0,
+        extras: '<a class="option" id="cheapBuildingSeconds" onclick="updateCheapBuildingSeconds(\'cheapBuildingSeconds\');">${cheapBuildingSeconds} seconds of CpS</a>',
+    },
     pastemode: {
         hint: "Buy least efficient option (⚠️ not recommended).",
         display: ["Pastemode OFF", "Pastemode ON"],
