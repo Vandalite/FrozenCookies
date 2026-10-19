@@ -658,6 +658,18 @@ function FCMenu() {
                             )
                         );
                     }
+                    if (extras) {
+                        var extrasHtml =
+                            typeof extras === "function"
+                                ? extras(FrozenCookies)
+                                : extras.replace(
+                                      /\$\{(.+)\}/g,
+                                      function (s, id) {
+                                          return fcBeautify(FrozenCookies[id]);
+                                      }
+                                  );
+                        listing.append($(extrasHtml));
+                    }
                     subsection.append(listing);
                 }
             });

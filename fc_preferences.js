@@ -581,4 +581,17 @@ FrozenCookies.preferenceValues = {
         display: ["Recommended OFF", "Recommended ON"],
         default: 0,
     },
+    experimentalOptions: {
+        hint: "Experimental:",
+    },
+    detourSearch: {
+        hint: "Search for cheaper purchases that speed up the selected target.",
+        display: ["Detour Search OFF", "Detour Search ON"],
+        default: 0,
+    },
+    efficiencyWeight: {
+        hint: "Purchase-time weight (set to 0 for pure payback efficiency).",
+        default: 1.0,
+        extras: '<a class="option" id="efficiencyWeight" onclick="updateEfficiencyWeight(\'efficiencyWeight\');">${efficiencyWeight}</a>',
+    },
 };

@@ -190,8 +190,7 @@ function setOverrides(gameSaveData) {
     }
     loadFCData();
     FrozenCookies.frequency = 100;
-    FrozenCookies.efficiencyWeight = 1.0;
-
+    
     // Becomes 0 almost immediately after user input, so default to 0
     FrozenCookies.timeTravelAmount = 0;
 
@@ -606,10 +605,11 @@ function validateNumber(value, minValue = null, maxValue = null) {
     );
 }
 
-function storeNumberCallback(base, min, max) {
+function storeNumberCallback(base, min, max, recalculateCaches) {
     return (result) => {
         if (!validateNumber(result, min, max)) result = FrozenCookies[base];
         FrozenCookies[base] = Number(result);
+if (recalculateCaches) FrozenCookies.recalculateCaches = true;
         FCStart();
     };
 }
@@ -710,6 +710,15 @@ function updateCheapBuildingSeconds(base) {
         "Instantly buy buildings costing less than this many seconds of CpS (0 disables, 0.5 recommended).",
         FrozenCookies[base],
         storeNumberCallback(base, 0)
+    );
+}
+
+function updateEfficiencyWeight(base) {
+    userInputPrompt(
+        "Purchase Time Weight",
+        "Set the purchase-time term in efficiency (0 uses pure payback efficiency; 1.15 is the legacy model).",
+        FrozenCookies[base],
+        storeNumberCallback(base, 0, null, true)
     );
 }
 
@@ -1832,24 +1841,12 @@ function nextPurchase(recalculate) {
         var target = null;
         for (var i = 0; i < recList.length; i++) {
             target = recList[i];
-            if (
-                target.type == "upgrade" &&
-                unfinishedUpgradePrereqs(Game.UpgradesById[target.id])
-            ) {
-                var prereqList = unfinishedUpgradePrereqs(
-                    Game.UpgradesById[target.id]
-                );
-                purchase = recList.filter(function (a) {
-                    return prereqList.some(function (b) {
-                        return b.id == a.id && b.type == a.type;
-                    });
-                })[0];
-            } else {
-                purchase = target;
-            }
+            purchase = resolveRecommendation(target, recList);
             if (purchase) {
-                FrozenCookies.caches.nextPurchase = purchase;
-                FrozenCookies.caches.nextChainedPurchase = target;
+                                FrozenCookies.caches.nextChainedPurchase = target;
+FrozenCookies.caches.nextPurchase = FrozenCookies.detourSearch
+                    ? selectDetourPurchase(purchase, target, recList)
+                    : purchase;
                 break;
             }
         }
@@ -1861,6 +1858,81 @@ function nextPurchase(recalculate) {
     }
     return FrozenCookies.caches.nextPurchase;
     //  return purchase;
+}
+
+function resolveRecommendation(target, recommendations) {
+    if (target.type != "upgrade") return target;
+    var prereqs = unfinishedUpgradePrereqs(Game.UpgradesById[target.id]);
+    if (!prereqs) return target;
+    return recommendations.filter(function (candidate) {
+        return prereqs.some(function (prereq) {
+            return prereq.id == candidate.id && prereq.type == candidate.type;
+        });
+    })[0];
+}
+
+function selectDetourPurchase(initialPurchase, initialTarget, recommendations) {
+    var delay = delayAmount();
+    var bank = Math.max(0, Game.cookies - delay);
+    var rate = effectiveCps(delay);
+    if (!(rate > 0)) return initialPurchase;
+
+    var chain = [initialPurchase, initialTarget];
+    var candidates = [];
+    recommendations.forEach(function (entry) {
+        var candidate = entry;
+        if (
+            chain.some(function (item) {
+                return item.id == candidate.id && item.type == candidate.type;
+            }) ||
+            (candidate.type == "upgrade" && !candidate.purchase.unlocked)
+        ) return;
+        if (
+            !(candidate.delta_cps > 0) ||
+            !isFinite(candidate.cost)
+        ) return;
+
+        var efficiency = divCps(candidate.cost, candidate.delta_cps);
+        if (isFinite(efficiency)) {
+            candidates.push({ purchase: candidate, efficiency: efficiency });
+        }
+    });
+    candidates.sort(function (a, b) {
+        return a.efficiency - b.efficiency;
+    });
+
+    var selectedPurchase = initialPurchase;
+    var target = initialPurchase;
+
+    while (isFinite(target.cost)) {
+        var targetTime = Math.max(0, target.cost - bank) / rate;
+        if (!(targetTime > 0)) break;
+
+        var detour = null;
+        for (var i = 0; i < candidates.length; i++) {
+            var candidate = candidates[i];
+            if (
+                chain.some(function (item) {
+                    return item.id == candidate.purchase.id &&
+                        item.type == candidate.purchase.type;
+                }) ||
+                !(candidate.purchase.cost < target.cost)
+            ) continue;
+
+            var wait = Math.max(0, candidate.purchase.cost - bank) / rate;
+            if (wait + candidate.efficiency < targetTime) {
+                detour = candidate;
+                break;
+            }
+        }
+        if (!detour) break;
+
+        target = detour.purchase;
+        chain.push(target);
+        selectedPurchase = target;
+    }
+
+    return selectedPurchase;
 }
 
 function nextChainedPurchase(recalculate) {
