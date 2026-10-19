@@ -1864,11 +1864,32 @@ function resolveRecommendation(target, recommendations) {
     if (target.type != "upgrade") return target;
     var prereqs = unfinishedUpgradePrereqs(Game.UpgradesById[target.id]);
     if (!prereqs) return target;
-    return recommendations.filter(function (candidate) {
+    var purchase = recommendations.filter(function (candidate) {
         return prereqs.some(function (prereq) {
             return prereq.id == candidate.id && prereq.type == candidate.type;
         });
     })[0];
+    if (!purchase && isRewardCookie(target.purchase)) {
+        var buildingBlacklist = blacklist[FrozenCookies.blacklist].buildings;
+        var targets = getRewardCookieBuildingTargets(target.purchase);
+        var cappedPrereqs =
+            buildingBlacklist !== true &&
+            prereqs.length > 0 &&
+            prereqs.every(function (prereq) {
+                if (
+                    prereq.type != "building" ||
+                    buildingBlacklist.includes(prereq.id)
+                )
+                    return false;
+                var building = Game.ObjectsById[prereq.id];
+                return (
+                    buildingPurchaseCap(building) <
+                    targets[prereq.id].amount
+                );
+            });
+        if (cappedPrereqs) return target;
+    }
+    return purchase;
 }
 
 function selectDetourPurchase(initialPurchase, initialTarget, recommendations) {

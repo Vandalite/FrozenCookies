@@ -983,6 +983,7 @@ This section explains the data shown in the Frozen Cookies menu:
 
 -   **Next Purchase**: The item (building or upgrade) that Frozen Cookies recommends as your next optimal purchase. If autobuy is enabled, this is what will be bought next.
 -   **Building Chain to**: Shown only if the optimal purchase is an upgrade with unmet prerequisites. This displays the final upgrade, while "Next Purchase" shows the prerequisite to buy first.
+-   Reward-cookie upgrades can temporarily exceed configured building caps to meet their all-building requirements.
 -   **Time until completion**: How long it will take, at your current CpS (cookies per second), to afford the Next Purchase. This includes any required Golden Cookie bank.
 -   **Time until chain completion**: If building toward a chain, this shows the time needed to buy all prerequisites and the target upgrade.
 -   **Cost**: The price of the Next Purchase.
