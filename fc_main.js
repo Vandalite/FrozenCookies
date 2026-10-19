@@ -190,7 +190,7 @@ function setOverrides(gameSaveData) {
     }
     loadFCData();
     FrozenCookies.frequency = 100;
-    
+
     // Becomes 0 almost immediately after user input, so default to 0
     FrozenCookies.timeTravelAmount = 0;
 
@@ -609,7 +609,7 @@ function storeNumberCallback(base, min, max, recalculateCaches) {
     return (result) => {
         if (!validateNumber(result, min, max)) result = FrozenCookies[base];
         FrozenCookies[base] = Number(result);
-if (recalculateCaches) FrozenCookies.recalculateCaches = true;
+        if (recalculateCaches) FrozenCookies.recalculateCaches = true;
         FCStart();
     };
 }
@@ -1843,8 +1843,8 @@ function nextPurchase(recalculate) {
             target = recList[i];
             purchase = resolveRecommendation(target, recList);
             if (purchase) {
-                                FrozenCookies.caches.nextChainedPurchase = target;
-FrozenCookies.caches.nextPurchase = FrozenCookies.detourSearch
+                FrozenCookies.caches.nextChainedPurchase = target;
+                FrozenCookies.caches.nextPurchase = FrozenCookies.detourSearch
                     ? selectDetourPurchase(purchase, target, recList)
                     : purchase;
                 break;
@@ -3047,6 +3047,18 @@ function fcClickCookie() {
         Game.ClickCookie();
 }
 
+// Smallest tower count whose max mana reaches manaMax, using the game's formula directly (M.magicM is only refreshed every 5th frame).
+function towerCountForMana(manaMax) {
+    var lvl = Math.max(M.parent.level, 1);
+    for (var n = 1; n < 10000; n++) {
+        var mana = Math.floor(
+            4 + Math.pow(n, 0.6) + Math.log((n + (lvl - 1) * 10) / 15 + 1) * 15
+        );
+        if (mana >= manaMax) return n;
+    }
+    return Infinity;
+}
+
 function buildingPurchaseCap(b) {
     switch (b.name) {
         case "Mine":
@@ -3056,8 +3068,8 @@ function buildingPurchaseCap(b) {
                 ? FrozenCookies.factoryMax
                 : Infinity;
         case "Wizard tower":
-            return M && FrozenCookies.towerLimit && M.magicM >= FrozenCookies.manaMax
-                ? 0
+            return M && FrozenCookies.towerLimit
+                ? towerCountForMana(FrozenCookies.manaMax)
                 : Infinity;
         case "You":
             var cap = Infinity;
@@ -3069,22 +3081,21 @@ function buildingPurchaseCap(b) {
     return Infinity;
 }
 
+// Sells one tower per pass while above the smallest count that reaches manaMax; the buyer is capped at the same count, so they can't bounce.
+function trimExcessTowers() {
+    if (!FrozenCookies.autoBuy || !M || !FrozenCookies.towerLimit) return false;
+    if (FrozenCookies.rewardCookiePending) return false;
+    var towers = Game.Objects["Wizard tower"];
+    if (towers.amount <= towerCountForMana(FrozenCookies.manaMax)) return false;
+    towers.sell(1);
+    return true;
+}
+
 // Buys cheap buildings in bulk without evaluating them; returns true if anything was bought.
 function buyCheapBuildings() {
     if (!FrozenCookies.autoBuy || !FrozenCookies.cheapBuildings) return false;
     var bl = blacklist[FrozenCookies.blacklist].buildings;
     if (bl === true) return false;
-    var towers = Game.Objects["Wizard tower"];
-    // A tower adds under 1 max mana, so selling stops exactly at manaMax, where the normal buyer also stops.
-    if (
-        M &&
-        FrozenCookies.towerLimit &&
-        towers.amount > 0 &&
-        M.magicM > FrozenCookies.manaMax
-    ) {
-        towers.sell(1);
-        return true;
-    }
     var limit = baseCps() * FrozenCookies.cheapBuildingSeconds;
     if (!(limit > 0)) return false;
     var delay = FrozenCookies.caches.nextChainedPurchase ? delayAmount() : 0;
@@ -3338,7 +3349,10 @@ function autoCookie() {
         }
 
         // Runs after the normal purchase so affordable upgrades get first claim on cookies.
-        if (buyCheapBuildings()) {
+        if (trimExcessTowers()) {
+            FrozenCookies.recalculateCaches = true;
+            itemBought = true;
+        } else if (buyCheapBuildings()) {
             FrozenCookies.recalculateCaches = true;
             itemBought = true;
         }
@@ -3879,26 +3893,11 @@ function getRewardCookieBuildingTargets(upgrade) {
 }
 
 function restoreBuildingLimits() {
-    // Sells excess buildings to return to user limits
+    // Only towers are harmful over their limit (extra max mana); other limits are just buy caps
     if (FrozenCookies.towerLimit) {
         var obj = Game.Objects["Wizard tower"];
-        if (obj.amount > FrozenCookies.manaMax)
-            obj.sell(obj.amount - FrozenCookies.manaMax);
-    }
-    if (FrozenCookies.mineLimit) {
-        var obj = Game.Objects["Mine"];
-        if (obj.amount > FrozenCookies.mineMax)
-            obj.sell(obj.amount - FrozenCookies.mineMax);
-    }
-    if (FrozenCookies.factoryLimit) {
-        var obj = Game.Objects["Factory"];
-        if (obj.amount > FrozenCookies.factoryMax)
-            obj.sell(obj.amount - FrozenCookies.factoryMax);
-    }
-    if (FrozenCookies.autoDragonOrbs && FrozenCookies.orbLimit) {
-        var obj = Game.Objects["You"];
-        if (obj.amount > FrozenCookies.orbMax)
-            obj.sell(obj.amount - FrozenCookies.orbMax);
+        var towerCap = towerCountForMana(FrozenCookies.manaMax);
+        if (obj.amount > towerCap) obj.sell(obj.amount - towerCap);
     }
 }
 
@@ -3911,6 +3910,8 @@ autoCookie = function () {
         chainRec.type === "upgrade" &&
         isRewardCookie(chainRec.purchase)
     ) {
+        // Tells buyCheapBuildings not to sell the temporary tower overshoot
+        FrozenCookies.rewardCookiePending = true;
         // Temporarily ignore limits and buy up to required amount for each building
         var targets = getRewardCookieBuildingTargets(chainRec.purchase);
         targets.forEach(function (t) {
@@ -3933,5 +3934,6 @@ autoCookie = function () {
         return;
     }
     // Default behavior
+    FrozenCookies.rewardCookiePending = false;
     _oldAutoCookie();
 };
